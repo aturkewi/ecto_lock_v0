@@ -13,6 +13,7 @@ defmodule EctoLock.MixProject do
 
   def application do
     [
+      mod: {EctoLock.Application, []},
       extra_applications: [:logger]
     ]
   end
