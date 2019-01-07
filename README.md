@@ -1,9 +1,9 @@
 Locking In Ecto
 
 Why use locks?
-We have an app that is in charge of sending out invoices when a set of criteria are met (X days before some date...). There is a task that we developed that checks daily for pending invoices that need to be sent. The issue that we found was that when we run this process in production we potentially run the risk of billing multiple times because we have multiple production servers and each on runs this task. Mo’ servers mo’ money right?
+We have an app that is in charge of sending out invoices when a set of criteria are met (X days before some date...). There is a task that we developed that checks daily for pending invoices that need to be sent. The issue that we found was that when we run this process in production we potentially run the risk of billing multiple times because we have multiple production servers and each one runs this task. Mo’ servers mo’ money right?
 
-For the short term, this is a great use case for database locks where we want to ensure that one process and only one process has access to a database row at a time.
+This is a great use case for database locks where we want to ensure that one process and only one process has access to a database row at a time.
 
 Setting up a project
 >If you don’t want to go through the setup of adding ecto and creating a migration, feel free to just clone _________ and use the pre-setup repo and then just skip down to ______________
@@ -81,18 +81,16 @@ Now let’s write some code such that we actually run into this locking issue. L
 
 
 Outline
-Introduction
-What were trying to do
-What was the problem
-Possible Solutions
-Only have one server run the process
-Locking
-Idempotence key
-Locking
-What does it do?
-How do you use it
-https://www.postgresql.org/docs/9.4/explicit-locking.html
-https://www.postgresql.org/docs/8.2/sql-lock.html
-
-
-Different types of locks
+  Introduction
+    What were trying to do
+    What was the problem
+  Possible Solutions
+    Only have one server run the process
+    Locking
+    Idempotence key
+  Locking
+    What does it do?
+    How do you use it
+      https://www.postgresql.org/docs/9.4/explicit-locking.html
+      https://www.postgresql.org/docs/8.2/sql-lock.html
+    Different types of locks
