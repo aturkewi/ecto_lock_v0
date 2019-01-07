@@ -78,7 +78,59 @@ Feeling the pain
 
 Now let’s write some code such that we actually run into this locking issue. Let’s create a new file at `lib/ecto_lock/bill_pending_invoices.ex` and fill it with the following:
 
+```elixir
+defmodule EctoLock.BillPendingInvoices do
+  alias EctoLock.{Invoice, Repo}
 
+  def create_pending_invoice do
+    %Invoice{}
+    |> Invoice.changeset(%{pending: true})
+    |> Repo.insert()
+  end
+
+  def bill_pending_invoice(invoice_id) do
+    invoice = get_invoice(invoice_id)
+    bill_through_api(invoice)
+    mark_invoice_sent(invoice)
+  end
+
+  def get_invoice(id) do
+    Repo.get(Invoice, id)
+  end
+
+  def bill_through_api(invoice) do
+    # let's assume it takes a second to hit the API
+    IO.puts("Sending invoice #{invoice.id}...")
+    :timer.sleep(1000)
+    IO.puts("Invoice #{invoice.id} sent!")
+  end
+
+  def mark_invoice_sent(invoice) do
+    invoice
+    |> Invoice.changeset(%{pending: false})
+    |> Repo.update()
+  end
+end
+```
+
+This just adds some basic functions that we can use to create, send, and update invoices. Let's give it a try!
+
+Go ahead and start up the app by typing `iex -S mix` in the terminal . This will give us an interactive elixir process. After you run this, you should get the following:
+
+```
+Interactive Elixir (1.7.4) - press Ctrl+C to exit (type h() ENTER for help)
+iex(1)>
+```
+
+Insides the elixir process, let's create a few pending invoices with:
+
+```elixir
+EctoLock.BillPendingInvoices.create_pending_invoice()
+EctoLock.BillPendingInvoices.create_pending_invoice()
+EctoLock.BillPendingInvoices.create_pending_invoice()
+```
+
+Then, let's send out the invoices with `EctoLock.BillPendingInvoices.`
 
 Outline
   Introduction

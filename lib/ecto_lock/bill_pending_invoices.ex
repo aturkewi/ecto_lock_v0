@@ -7,6 +7,12 @@ defmodule EctoLock.BillPendingInvoices do
     |> Repo.insert()
   end
 
+  def bill_pending_invoices do
+    Invoice.pending()
+    |> Repo.all()
+    |> Enum.each(fn invoice -> bill_pending_invoice(invoice.id) end)
+  end
+
   def bill_pending_invoice(invoice_id) do
     invoice = get_invoice(invoice_id)
     bill_through_api(invoice)
