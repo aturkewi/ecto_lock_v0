@@ -147,10 +147,9 @@ defmodule EctoLock.BillPendingInvoices do
     |> Repo.update()
   end
 end
-
 ```
 
-This just adds some basic functions that we can use to create, send, and update invoices. Let's give it a try!
+This just adds some basic functions that we can use to create, send, and update invoices. We want to grab all of our pending invoices with `bill_pending_invoices` and then send each one. For each one we send, we need to get the invoice, hit our billing API, and then update our own database so that we know that invoice was sent. For the purposes of this blog paste, we're just adding a one second delay (`:timer.sleep(1000)`) where we are pretending that is the API request/response. Now, let's give it a try!
 
 Go ahead and start up the app by typing `iex -S mix` in the terminal . This will give us an interactive elixir process. After you run this, you should get the following:
 
@@ -205,7 +204,7 @@ We can see that all three invoices were sent! Go ahead, run it again, you'll see
 
 Now that all works well and good, but what if we had _two_ servers running this check at the same time? What would that look like? To simulate this, we're going to spin up two [elixir process](INSERT LINK HERE) that will run at relatively the same time.
 
->Note: Spawning an elixir process is just allowing some code to execute asynchronously. It's a great topic for another blog post, but for the moment, I think that should be enough of an understaning :)
+>Note: Spawning an elixir process is just allowing some code to execute asynchronously. It's a great topic for another blog post, but for the moment, I think that should be enough of an understanding :)
 
 Let's create a couple of helpers for ourselves here. Go ahead and create a file `lib/ecto_lock/helper.ex` and put the following in it:
 
@@ -247,7 +246,37 @@ Invoice 6 sent!
 Invoice 6 sent!
 ```
 
-Now that's a problem. We've sent out each invoice twice. 
+Now that's a problem. We've sent out each invoice twice.
+
+Possible Solutions
+
+There are of course many possible solutions to this problem. I'll touch on a few of the ones we considered, but I won't go too deep into any of them.
+
+Only Run the Process On One Server
+
+This was my first thought when we ran into this issue. I figured that easiest solution would be to just _avoid_ this problem in the first place. After talking with the team though, we realized that:
+
+1. There are much larger operation concerns here with regards to how to do this. Is one server designated prime? What if it goes down? Do all the servers need to then talk to eachother...
+
+and
+
+2. When dealing with something like invoicing users, we want to be _sure_ that we're not billing them twice or anything like that. Rather than relying on the right number of the right servers being in rotation, we want to use a more robust industry standard tool (locking...?)
+
+Idempotence Keys (Stripe Specific)
+
+This idea had more to do with Strip specifically. The idea was that if we tagged each invoice we sent with an idempotence key, Stripe would know not to duplicate an invoice on their end. The short answer here is that this does not work how we originally thought it might. That tool is used to just return the exact same response if the same request is sent twice. So what would happen if our first request to Stripe failed? Then any time we would retry the request we'd get the same failed response again and again :( Also, accoriding to the Stripe docs, this key is _not_ meant to be used to ensure that double billing does not take place.
+
+Locking
+
+The idea here is that each server looks up an invoice to send it. When it retrieves the invoice from the database, it puts a _lock_ on that row so that _no other process can access it_. This would mean that if Server A looked up invoice 7 and got a lock on it, Server B would not be able to retrieve the invoice and therefore would _not_ be able to send it out.
+
+Locking
+
+Surprise surprise, we ended up going with database locking! Database locking is a very robust and well used tool. It's been a feature of SQL databases since YYYY.
+
+
+
+
 
 Outline
   Introduction
