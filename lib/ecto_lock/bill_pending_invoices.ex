@@ -15,12 +15,16 @@ defmodule EctoLock.BillPendingInvoices do
 
   def bill_pending_invoice(invoice_id) do
     invoice = get_invoice(invoice_id)
+
     bill_through_api(invoice)
+
     mark_invoice_sent(invoice)
   end
 
   def get_invoice(id) do
-    Repo.get(Invoice, id)
+    Invoice
+    |> Invoice.get_and_lock_invoice(id)
+    |> Repo.one()
   end
 
   def bill_through_api(invoice) do

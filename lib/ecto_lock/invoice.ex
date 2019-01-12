@@ -16,6 +16,13 @@ defmodule EctoLock.Invoice do
     )
   end
 
+  def get_and_lock_invoice(query \\ Invoice, invoice_id) do
+    from(i in query,
+      where: i.id == ^invoice_id,
+      lock: "FOR UPDATE NOWAIT"
+    )
+  end
+
   def changeset(%EctoLock.Invoice{} = invoice, attrs \\ %{}) do
     invoice
     |> cast(attrs, [:pending])
