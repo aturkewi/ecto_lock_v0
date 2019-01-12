@@ -272,8 +272,17 @@ The idea here is that each server looks up an invoice to send it. When it retrie
 
 Locking
 
+What does it do?
+
 Surprise surprise, we ended up going with database locking! Database locking is a very robust and well used tool. It's been a feature of SQL databases since YYYY.
 
+As explained above, databse locking allows us to make a row in accessible. We can use this tool to ensure that only one process is working on a pieces of data at a time so we can avoid write conflicts (two processes try and make updates at the same time).
+
+How do you use it?
+
+Let's go over how we can use [Ecto's lock function](link to ecto lock).
+
+Like all Ecto queries, there are two ways we can use this. We can either use the keyword syntax, or the expression syntax. I'm going to go ahead and use the keyword syntax, but either would work.  
 
 
 
