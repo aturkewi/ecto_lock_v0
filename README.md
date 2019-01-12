@@ -284,8 +284,30 @@ Let's go over how we can use [Ecto's lock function](link to ecto lock).
 
 Like all Ecto queries, there are two ways we can use this. We can either use the keyword syntax, or the expression syntax. I'm going to go ahead and use the keyword syntax, but either would work.  
 
+First, let's add the following function to our `Invoice` module:
 
+```elixir
+def get_and_lock_invoice(query \\ Invoice, invoice_id) do
+  from(i in query,
+    where: i.id == ^invoice_id,
+    lock: "FOR UPDATE NOWAIT"
+  )
+end
+```
 
+Here we are querying for an invoice and then locking it. The string that we're passing to lock has to be a very specific string though. We can take a look at some options for postgres [here](https://www.postgresql.org/docs/9.4/explicit-locking.html). See the section on `FOR UPDATE`. This ensures that this row is locked _until we update it_ in this transaction. We are also adding the `NOWAIT` option to ensure that other process will simply fail when trying to retrieve this same row rather than _waiting_ to perform their action. If you leave the `NOWAIT` option off, then out second process would still try and send out an invoice after the first completes (though we _could_ have it check to see if the invoice was already sent, but it would mean that we're forcing a process to sit and wait when we know there won't be any more work for it to do on a given invoice).
+
+Now let's update our `get_invoice` function in the `EctoLock.BillPendingInvoices` module to look like:
+
+```elixir
+def get_invoice(id) do
+  Invoice
+  |> Invoice.get_and_lock_invoice(id)
+  |> Repo.one()
+end
+```
+
+This will now ensure that when we retrieve the invoice, we are also locking it.
 
 Outline
   Introduction
