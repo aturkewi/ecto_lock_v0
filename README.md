@@ -307,7 +307,60 @@ def get_invoice(id) do
 end
 ```
 
-This will now ensure that when we retrieve the invoice, we are also locking it.
+This will now ensure that when we retrieve the invoice, we are also locking it. Let's go ahead an test our code again to see how it works! Go ahead and start up your elixir terminal and run the following commands:
+
+```elixir
+EctoLock.Helper.create_invoices()
+EctoLock.Helper.bill_from_two_servers()
+```
+
+This is what we get:
+```
+iex(6)> EctoLock.Helper.bill_from_two_servers()
+#PID<0.235.0>
+iex(7)>
+13:01:33.138 [debug] QUERY OK source="invoices" db=1.5ms queue=0.1ms
+SELECT i0."id", i0."pending" FROM "invoices" AS i0 WHERE (i0."pending" = TRUE) []
+
+13:01:33.139 [debug] QUERY OK source="invoices" db=2.0ms
+SELECT i0."id", i0."pending" FROM "invoices" AS i0 WHERE (i0."pending" = TRUE) []
+
+13:01:33.141 [debug] QUERY ERROR source="invoices" db=2.0ms queue=0.1ms
+SELECT i0."id", i0."pending" FROM "invoices" AS i0 WHERE (i0."id" = $1) FOR UPDATE NOWAIT [14]
+Sending invoice 14...
+iex(7)>
+13:01:33.141 [debug] QUERY OK source="invoices" db=2.7ms
+SELECT i0."id", i0."pending" FROM "invoices" AS i0 WHERE (i0."id" = $1) FOR UPDATE NOWAIT [14]
+
+13:01:33.142 [error] Process #PID<0.235.0> raised an exception
+** (Postgrex.Error) ERROR 55P03 (lock_not_available) could not obtain lock on row in relation "invoices"
+    (ecto_sql) lib/ecto/adapters/sql.ex:595: Ecto.Adapters.SQL.raise_sql_call_error/1
+    (ecto_sql) lib/ecto/adapters/sql.ex:528: Ecto.Adapters.SQL.execute/5
+    (ecto) lib/ecto/repo/queryable.ex:147: Ecto.Repo.Queryable.execute/4
+    (ecto) lib/ecto/repo/queryable.ex:18: Ecto.Repo.Queryable.all/3
+    (ecto) lib/ecto/repo/queryable.ex:66: Ecto.Repo.Queryable.one/3
+    (ecto_lock) lib/ecto_lock/bill_pending_invoices.ex:17: EctoLock.BillPendingInvoices.bill_pending_invoice/1
+    (elixir) lib/enum.ex:765: Enum."-each/2-lists^foreach/1-0-"/2
+    (elixir) lib/enum.ex:765: Enum.each/2
+Invoice 14 sent!
+iex(7)>
+13:01:34.146 [debug] QUERY OK db=2.8ms queue=0.7ms
+UPDATE "invoices" SET "pending" = $1 WHERE "id" = $2 [false, 14]
+Sending invoice 15...
+Invoice 15 sent!
+Sending invoice 16...
+Invoice 16 sent!
+```
+
+>Note: I've removed some of the SQL messages here, but not all of them.
+
+Alright! We can see that we've solved the problem! Now each invoice is only being sent one time! Taking a closer look at the return though, we now have a new issue. 
+
+Whichever server _did not_ get the database lock ended up throwing the following error: `** (Postgrex.Error) ERROR 55P03 (lock_not_available) could not obtain lock on row in relation "invoices"`. This isn't great. It means that our server is going to be constantly throwing unhandled errors _and_ we can see that once it failed for one invoice, it didn't try and take care of any more. Let's see if we can handle this error and make things a little more performant.
+
+If at first you don't succeed, try again!
+
+
 
 Outline
   Introduction
