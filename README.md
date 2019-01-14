@@ -276,11 +276,11 @@ What does it do?
 
 Surprise surprise, we ended up going with database locking! Database locking is a very robust and well used tool. It's been a feature of SQL databases since YYYY.
 
-As explained above, databse locking allows us to make a row in accessible. We can use this tool to ensure that only one process is working on a pieces of data at a time so we can avoid write conflicts (two processes try and make updates at the same time).
+As explained above, database locking allows us to make a row in accessible. We can use this tool to ensure that only one process is working on a pieces of data at a time so we can avoid write conflicts (two processes try and make updates at the same time).
 
 How do you use it?
 
-Let's go over how we can use [Ecto's lock function](link to ecto lock).
+Let's go over how we can use [Ecto's lock function](link to ecto lock). To do this, we're going to also want to use [`Ecto.Multi`](https://hexdocs.pm/ecto/Ecto.Multi.html). I don't want to go too far into how this tool works, but it basically allows us to write a database transaction (meaning all the steps happen, or none of them do). We are using this so that we can lock our row for the duration of a transaction.
 
 Like all Ecto queries, there are two ways we can use this. We can either use the keyword syntax, or the expression syntax. I'm going to go ahead and use the keyword syntax, but either would work.  
 
@@ -290,7 +290,7 @@ First, let's add the following function to our `Invoice` module:
 def get_and_lock_invoice(query \\ Invoice, invoice_id) do
   from(i in query,
     where: i.id == ^invoice_id,
-    lock: "FOR UPDATE NOWAIT"
+    lock: "FOR UPDATE"
   )
 end
 ```
@@ -379,6 +379,11 @@ Here we are using Elixir's [try/rescue](https://elixir-lang.org/getting-started/
 >Note: that we only want to catch this specific error and not just _any_ error. If another error get's thrown, we definitely want to be alerted to the problem and not just cover it up with news paper. (Insert Big Daddy gif?)
 
 Now that we can this in place, let's restart our elixir console and try this again:
+
+```elixir
+EctoLock.Helper.create_invoices()
+EctoLock.Helper.bill_from_two_servers()
+```
 
 Outline
   Introduction
