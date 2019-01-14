@@ -14,10 +14,18 @@ defmodule EctoLock.BillPendingInvoices do
   end
 
   def bill_pending_invoice(invoice_id) do
-    invoice = get_invoice(invoice_id)
+    try do
+      get_invoice(invoice_id)
+      |> send_invoice()
+    rescue
+      e in Postgrex.Error -> {:ok, e}
+    end
+  end
 
+  def send_invoice(_invoice = nil), do: :ok
+
+  def send_invoice(invoice) do
     bill_through_api(invoice)
-
     mark_invoice_sent(invoice)
   end
 

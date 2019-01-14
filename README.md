@@ -354,13 +354,31 @@ Invoice 16 sent!
 
 >Note: I've removed some of the SQL messages here, but not all of them.
 
-Alright! We can see that we've solved the problem! Now each invoice is only being sent one time! Taking a closer look at the return though, we now have a new issue. 
+Alright! We can see that we've solved the problem! Now each invoice is only being sent one time! Taking a closer look at the return though, we now have a new issue.
 
 Whichever server _did not_ get the database lock ended up throwing the following error: `** (Postgrex.Error) ERROR 55P03 (lock_not_available) could not obtain lock on row in relation "invoices"`. This isn't great. It means that our server is going to be constantly throwing unhandled errors _and_ we can see that once it failed for one invoice, it didn't try and take care of any more. Let's see if we can handle this error and make things a little more performant.
 
 If at first you don't succeed, try again!
 
+What we want to do here is safely rescue this error in the event that things don't work out. Let's update `bill_pending_invoice/1` in our `EctoLock.BillPendingInvoices` module to look like this:
 
+```elixir
+def bill_pending_invoice(invoice_id) do
+  try do
+    invoice = get_invoice(invoice_id)
+    bill_through_api(invoice)
+    mark_invoice_sent(invoice)
+  rescue
+    e in Postgrex.Error -> {:ok, e}
+  end
+end
+```
+
+Here we are using Elixir's [try/rescue](https://elixir-lang.org/getting-started/try-catch-and-rescue.html) functionality to safely catch this specific error.
+
+>Note: that we only want to catch this specific error and not just _any_ error. If another error get's thrown, we definitely want to be alerted to the problem and not just cover it up with news paper. (Insert Big Daddy gif?)
+
+Now that we can this in place, let's restart our elixir console and try this again:
 
 Outline
   Introduction
