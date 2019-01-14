@@ -14,12 +14,14 @@ defmodule EctoLock.BillPendingInvoices do
   end
 
   def bill_pending_invoice(invoice_id) do
-    try do
+    Ecto.Multi.new()
+    |> Ecto.Multi.run(:get_invoice, fn _ ->
       get_invoice(invoice_id)
-      |> send_invoice()
-    rescue
-      e in Postgrex.Error -> {:ok, e}
-    end
+    end)
+    |> Ecto.Multi.run(:send_invoice, fn %{get_invoice: invoice} ->
+      send_invoice(invoice)
+    end)
+    |> Repo.transaction()
   end
 
   def send_invoice(_invoice = nil), do: :ok
@@ -30,10 +32,18 @@ defmodule EctoLock.BillPendingInvoices do
   end
 
   def get_invoice(id) do
-    Invoice
-    |> Invoice.get_and_lock_invoice(id)
-    |> Repo.one()
+    try do
+      Invoice
+      |> Invoice.get_and_lock_invoice(id)
+      |> Repo.one()
+      |> return_invoice()
+    rescue
+      _e in Postgrex.Error -> {:error, "Could not obtain lock"}
+    end
   end
+
+  def return_invoice(invoice = %Invoice{}), do: {:ok, invoice}
+  def return_invoice(_invoice = nil), do: {:error, "Could not find invoice"}
 
   def bill_through_api(invoice) do
     # let's assume it takes a second to hit the API
