@@ -289,7 +289,7 @@ First, let's add the following function to our `Invoice` module:
 ```elixir
 def get_and_lock_invoice(query \\ Invoice, invoice_id) do
   from(i in query,
-    where: i.id == ^invoice_id,
+    where: i.id == ^invoice_id and i.pending == true,
     lock: "FOR UPDATE NOWAIT"
   )
 end
@@ -354,7 +354,7 @@ Invoice 16 sent!
 
 >Note: I've removed some of the SQL messages here, but not all of them.
 
-Alright! We can see that we've solved the problem! Now each invoice is only being sent one time! Taking a closer look at the return though, we now have a new issue. 
+Alright! We can see that we've solved the problem! Now each invoice is only being sent one time! Taking a closer look at the return though, we now have a new issue.
 
 Whichever server _did not_ get the database lock ended up throwing the following error: `** (Postgrex.Error) ERROR 55P03 (lock_not_available) could not obtain lock on row in relation "invoices"`. This isn't great. It means that our server is going to be constantly throwing unhandled errors _and_ we can see that once it failed for one invoice, it didn't try and take care of any more. Let's see if we can handle this error and make things a little more performant.
 
