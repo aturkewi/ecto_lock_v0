@@ -1,15 +1,19 @@
 Locking In Ecto
 
-Why use locks?
+A problem
+
+So before I go into database locking (what is it?) and implementing it, I want to first start off with a problem and how I came to learn about this myself.
+
 We have an app that is in charge of sending out invoices when a set of criteria are met (X days before some date...). There is a task that we developed that checks daily for pending invoices that need to be sent. The issue that we found was that when we run this process in production we potentially run the risk of billing multiple times because we have multiple production servers and each one runs this task. Mo’ servers mo’ money right?
 
-This is a great use case for database locks where we want to ensure that one process and only one process has access to a database row at a time.
+Wrong! It turns out, people do not like to be sent multiple invoices for the same thing. Who would have guessed.
 
 Setting up a project
+
 >If you don’t want to go through the setup of adding ecto and creating a migration, feel free to just clone _________ and use the pre-setup repo and then just skip down to ______________
 Creating the database and connection
 
-To start off with this, let’s set up the problem so we can play with this a bit.
+To start off with this, let’s set up the problem so we can actually see this issue and go about solving it together.
 
 ```elixir
 mix new --sup ecto_lock
@@ -26,7 +30,7 @@ defp deps do
   end
 ```
 
-And add the Ecto Repo to your application list (in the same file):
+Add the Ecto Repo to your application list (in the same file):
 
 ```elixir
 def application do
@@ -37,7 +41,7 @@ def application do
   end
 ```
 
-And load the dependencies with `mix deps.get` in the terminal and create the db config with `mix ecto.gen.repo -r EctoLock.Repo`
+Next load the dependencies with `mix deps.get` in the terminal and create the db config with `mix ecto.gen.repo -r EctoLock.Repo`
 
 Let’s also add our repo module to our startup processes by adding the following to our `lib/ecto_lock/application.ex`’s `start` function:
 
@@ -57,7 +61,9 @@ config :ecto_lock, EctoLock.Repo,
 
 config :ecto_lock, ecto_repos: [EctoLock.Repo]
 ```
+
 Creating our Invoice table
+
 To create the migration, let’s run `mix ecto.gen.migration create_invoices` in the terminal. Then replace `priv/repo/migrations/<some-numbers>_create_invoices.exs` with the following:
 
 ```elixir
@@ -72,9 +78,9 @@ defmodule EctoLock.Repo.Migrations.CreateInvoices do
 end
 ```
 
-This will create a very simple table that has one column, `pending`. In our app of course, the invoice table has many more columns with useful information (balance, due_date…), but we don’t need anything else to learn about lock :)
+This will create a very simple table that has one column, `pending`. In our app of course, the invoice table has many more columns with useful information (balance, due_date...), but we don’t need anything else to learn about lock :)
 
-Finally, let's create a basic scheme file for an invoice at `lib/ecto_lock/invoice.ex` and fill it in with the following:
+Finally, let's create a basic schema file for an invoice at `lib/ecto_lock/invoice.ex` and fill it in with the following:
 
 ```elixir
 defmodule EctoLock.Invoice do
@@ -149,7 +155,22 @@ defmodule EctoLock.BillPendingInvoices do
 end
 ```
 
-This just adds some basic functions that we can use to create, send, and update invoices. We want to grab all of our pending invoices with `bill_pending_invoices` and then send each one. For each one we send, we need to get the invoice, hit our billing API, and then update our own database so that we know that invoice was sent. For the purposes of this blog paste, we're just adding a one second delay (`:timer.sleep(1000)`) where we are pretending that is the API request/response. Now, let's give it a try!
+This just adds some basic functions that we can use to create, send, and update invoices. We want to grab all of our pending invoices with `bill_pending_invoices` and then send each one. For each one we send, we need to get the invoice, hit our billing API, and then update our own database so that we know that invoice was sent. For the purposes of this blog post, we're just adding a one second delay (`:timer.sleep(1000)`) where we are pretending that the process is going through an API request/response. Now, let's give it a try!
+
+Finally, let's create a helper module for ourselves for some commands we'll be running frequently. Go ahead and create a file `lib/ecto_lock/helper.ex` and put the following in it:
+
+```elixir
+defmodule EctoLock.Helper do
+
+  alias EctoLock.BillPendingInvoices
+
+  def create_invoices do
+    BillPendingInvoices.create_pending_invoice()
+    BillPendingInvoices.create_pending_invoice()
+    BillPendingInvoices.create_pending_invoice()
+  end
+end
+```
 
 Go ahead and start up the app by typing `iex -S mix` in the terminal . This will give us an interactive elixir process. After you run this, you should get the following:
 
@@ -161,9 +182,7 @@ iex(1)>
 Insides the elixir process, let's create a few pending invoices with:
 
 ```elixir
-EctoLock.BillPendingInvoices.create_pending_invoice()
-EctoLock.BillPendingInvoices.create_pending_invoice()
-EctoLock.BillPendingInvoices.create_pending_invoice()
+EctoLock.Helper.create_invoices()
 ```
 
 Then, let's send out the invoices by running the following in the Elixir process: `EctoLock.BillPendingInvoices.bill_pending_invoices()`. You should see something that looks like this:
@@ -202,33 +221,20 @@ UPDATE "invoices" SET "pending" = $1 WHERE "id" = $2 [false, 3]
 
 We can see that all three invoices were sent! Go ahead, run it again, you'll see there are no more invoices left to send and we'll get an immediate return (rather than the 3 second wait from 'hitting the api').
 
-Now that all works well and good, but what if we had _two_ servers running this check at the same time? What would that look like? To simulate this, we're going to spin up two [elixir process](INSERT LINK HERE) that will run at relatively the same time.
+Now this all works well and good, but what if we had _two_ servers running this process at the same time? What would that look like? To simulate this, we're going to spin up two [elixir process](https://elixir-lang.org/getting-started/processes.html) that will run at relatively the same time.
 
->Note: Spawning an elixir process is just allowing some code to execute asynchronously. It's a great topic for another blog post, but for the moment, I think that should be enough of an understanding :)
-
-Let's create a couple of helpers for ourselves here. Go ahead and create a file `lib/ecto_lock/helper.ex` and put the following in it:
+To help us do this, we're going to add the following function to our `EctoLock.Helper` module:
 
 ```elixir
-defmodule EctoLock.Helper do
-
-  alias EctoLock.BillPendingInvoices
-
-  def create_invoices do
-    BillPendingInvoices.create_pending_invoice()
-    BillPendingInvoices.create_pending_invoice()
-    BillPendingInvoices.create_pending_invoice()
-  end
-
-  def bill_from_two_servers() do
-    spawn(fn -> BillPendingInvoices.bill_pending_invoices() end)
-    spawn(fn -> BillPendingInvoices.bill_pending_invoices() end)
-  end
+def bill_from_two_servers() do
+  spawn(fn -> BillPendingInvoices.bill_pending_invoices() end)
+  spawn(fn -> BillPendingInvoices.bill_pending_invoices() end)
 end
 ```
 
-Here we've created a helper function to create some dummy data for us _and_ a function that will run our billing function twice at the same time.
+>Note: Spawning an elixir process is just allowing some code to execute asynchronously. It's a great topic for another blog post, but for the moment, I think that should be enough of an understanding :)
 
-Go ahead and resart your iex session (`ctrl + c` twice and then `iex -S mix`). Let's create some dummy data with `EctoLock.Helper.create_invoices()` and then let's run `EctoLock.Helper.bill_from_two_servers()`. This is what we get (note: I removed all of the sequal quries from below and only left our `IO.puts` to make this a bit more readable):
+Go ahead and restart your iex session (`ctrl + c` twice and then `iex -S mix`). Let's create some dummy data with `EctoLock.Helper.create_invoices()` and then let's run `EctoLock.Helper.bill_from_two_servers()`. This is what we get (note: I removed all of the SQL queries from below and only left our `IO.puts` to make this a bit more readable):
 
 ```
 iex(2)> EctoLock.Helper.bill_from_two_servers()
@@ -256,31 +262,29 @@ Only Run the Process On One Server
 
 This was my first thought when we ran into this issue. I figured that easiest solution would be to just _avoid_ this problem in the first place. After talking with the team though, we realized that:
 
-1. There are much larger operation concerns here with regards to how to do this. Is one server designated prime? What if it goes down? Do all the servers need to then talk to eachother...
+1. There are much larger operation concerns here with regards to how to do this. Is one server designated prime? What if it goes down? Do all the servers need to then talk to each other...
 
 and
 
-2. When dealing with something like invoicing users, we want to be _sure_ that we're not billing them twice or anything like that. Rather than relying on the right number of the right servers being in rotation, we want to use a more robust industry standard tool (locking...?)
+2. When dealing with something like invoicing users, we want to be _sure_ that we're not billing them twice or anything like that. Rather than relying on the right number of the right servers being in rotation, we want to use a more robust industry standard tool.
 
-Idempotence Keys (Stripe Specific)
+Idempotency Keys (Stripe Specific)
 
-This idea had more to do with Strip specifically. The idea was that if we tagged each invoice we sent with an idempotence key, Stripe would know not to duplicate an invoice on their end. The short answer here is that this does not work how we originally thought it might. That tool is used to just return the exact same response if the same request is sent twice. So what would happen if our first request to Stripe failed? Then any time we would retry the request we'd get the same failed response again and again :( Also, accoriding to the Stripe docs, this key is _not_ meant to be used to ensure that double billing does not take place.
+This idea had more to do with Strip specifically. The idea was that if we tagged each invoice we sent with an Idempotency key, Stripe would know not to duplicate an invoice on their end. The short answer here is that this does not work how we originally thought it might. That tool is used to just return the exact same response if the same request is sent twice. So what would happen if our first (totally valid) request to Stripe failed on their end? Then any time we would retry the request we'd get the same failed response again and again :( Also, according to the Stripe docs, this key is _not_ meant to be used to ensure that double billing does not take place.
 
 Locking
 
-The idea here is that each server looks up an invoice to send it. When it retrieves the invoice from the database, it puts a _lock_ on that row so that _no other process can access it_. This would mean that if Server A looked up invoice 7 and got a lock on it, Server B would not be able to retrieve the invoice and therefore would _not_ be able to send it out.
+The idea here is that each server looks up an invoice to send it. When it retrieves the invoice from the database, it puts a _lock_ on that row so that _no other process can access it_. This would mean that if Server A looked up invoice 7 and got a lock on it, Server B would not be able to retrieve the invoice because that row is locked and therefore would _not_ be able to send it out.
 
 Locking
 
 What does it do?
 
-Surprise surprise, we ended up going with database locking! Database locking is a very robust and well used tool. It's been a feature of SQL databases since YYYY.
-
-As explained above, databse locking allows us to make a row in accessible. We can use this tool to ensure that only one process is working on a pieces of data at a time so we can avoid write conflicts (two processes try and make updates at the same time).
+Surprise surprise, we ended up going with database locking! Database locking is a very robust and well used tool. As explained above, database locking allows us to make a row in inaccessible. We can use this tool to ensure that only one process is working on a pieces of data at a time so we can avoid write conflicts (two processes try and make updates at the same time).
 
 How do you use it?
 
-Let's go over how we can use [Ecto's lock function](link to ecto lock).
+Let's go over how we can use [Ecto's lock function](https://hexdocs.pm/ecto/Ecto.Query.html#lock/2).
 
 Like all Ecto queries, there are two ways we can use this. We can either use the keyword syntax, or the expression syntax. I'm going to go ahead and use the keyword syntax, but either would work.  
 
@@ -295,7 +299,7 @@ def get_and_lock_invoice(query \\ Invoice, invoice_id) do
 end
 ```
 
-Here we are querying for an invoice and then locking it. The string that we're passing to lock has to be a very specific string though. We can take a look at some options for postgres [here](https://www.postgresql.org/docs/9.4/explicit-locking.html). See the section on `FOR UPDATE`. This ensures that this row is locked _until we update it_ in this transaction. We are also adding the `NOWAIT` option to ensure that other process will simply fail when trying to retrieve this same row rather than _waiting_ to perform their action. If you leave the `NOWAIT` option off, then out second process would still try and send out an invoice after the first completes (though we _could_ have it check to see if the invoice was already sent, but it would mean that we're forcing a process to sit and wait when we know there won't be any more work for it to do on a given invoice).
+Here we are querying for an invoice and then locking it. The string that we're passing to lock has to be a very specific string though. We can take a look at some options for postgres [here](https://www.postgresql.org/docs/9.4/explicit-locking.html). See the section on `FOR UPDATE`. This ensures that this row is locked _until we update it_ in this transaction. We are also adding the `NOWAIT` option to ensure that other process will simply fail when trying to retrieve this same row rather than _waiting_ to perform their action. If you leave the `NOWAIT` option off, then our second process would still try and send out an invoice after the first completes. We know we don't want this and that this invoice is already being handled, so we're just telling our second server not to wait.
 
 Now let's update our `get_invoice` function in the `EctoLock.BillPendingInvoices` module to look like:
 
@@ -354,25 +358,12 @@ Invoice 16 sent!
 
 >Note: I've removed some of the SQL messages here, but not all of them.
 
-Alright! We can see that we've solved the problem! Now each invoice is only being sent one time! Taking a closer look at the return though, we now have a new issue.
+Alright! We can see that we've solved the problem with locking! Now each invoice is only being sent one time :) Whichever server _did not_ get the database lock ended up throwing the following error: `** (Postgrex.Error) ERROR 55P03 (lock_not_available) could not obtain lock on row in relation "invoices"`. Failing to get the lock threw and error that ended up stopping this process from continuing.
 
-Whichever server _did not_ get the database lock ended up throwing the following error: `** (Postgrex.Error) ERROR 55P03 (lock_not_available) could not obtain lock on row in relation "invoices"`. This isn't great. It means that our server is going to be constantly throwing unhandled errors _and_ we can see that once it failed for one invoice, it didn't try and take care of any more. Let's see if we can handle this error and make things a little more performant.
+We can now move forward with confidence that we're only invoicing each customer _once_.
 
-If at first you don't succeed, try again!
+Wrap Up and Future Work
 
+This is meant to be a very basic intro to locking. Obviously this isn't ideal to be throwing and error and have that be an expected flow, but the way I would solve this goes into using [`Ecto.Multi`](https://hexdocs.pm/ecto/Ecto.Multi.html#content) to create larger transactions. Hopefully we'll have a blog post coming out about that soon!
 
-
-Outline
-  Introduction
-    What were trying to do
-    What was the problem
-  Possible Solutions
-    Only have one server run the process
-    Locking
-    Idempotence key
-  Locking
-    What does it do?
-    How do you use it
-      https://www.postgresql.org/docs/9.4/explicit-locking.html
-      https://www.postgresql.org/docs/8.2/sql-lock.html
-    Different types of locks
+In the mean time, I hope this gave a quick explanation of what database locking is, why you might want to use it, and how to implement it in Elixir with Ecto!
